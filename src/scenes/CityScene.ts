@@ -228,22 +228,87 @@ export class CityScene extends Phaser.Scene {
   }
 
   private setupUI(): void {
-    // Bottom nav bar
-    const W = this.scene.scene.scale.width;
-    const H = this.scene.scene.scale.height;
+    const W = this.scale.width;
+    const H = this.scale.height;
 
-    const navBg = this.add.rectangle(0, H - 50, W, 50, 0x1a1a2e, 0.95)
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(1000);
+    // ── Bottom nav bar — Evony bronze style ────────────────────────────────
+    const navH = 54;
+    const navG = this.add.graphics().setScrollFactor(0).setDepth(990);
+    navG.fillStyle(0x12100a, 0.97);
+    navG.fillRect(0, H - navH, W, navH);
+    // Top gold border
+    navG.lineStyle(2, 0x8a6a20, 1);
+    navG.lineBetween(0, H - navH, W, H - navH);
+    navG.lineStyle(1, 0xd4aa40, 0.35);
+    navG.lineBetween(0, H - navH - 2, W, H - navH - 2);
 
-    const worldBtn = this.add.text(W / 2, H - 25, '🗺  World Map', {
-      fontSize: '15px', color: '#ffffff',
-      backgroundColor: '#2255aa',
-      padding: { x: 16, y: 6 },
-    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1001)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.scene.start('WorldMapScene', { state: this.state }))
-      .on('pointerover', function(this: Phaser.GameObjects.Text) { this.setBackgroundColor('#3366cc'); })
-      .on('pointerout',  function(this: Phaser.GameObjects.Text) { this.setBackgroundColor('#2255aa'); });
+    // Tab buttons — matching original Evony's bottom tabs
+    const tabs = [
+      { label: '🏰  City',       key: 'city' },
+      { label: '🗺  World Map',  key: 'world' },
+      { label: '⚔  Reports',    key: 'reports' },
+      { label: '📜  Alliance',   key: 'alliance' },
+      { label: '🦸  Heroes',     key: 'heroes' },
+    ];
+
+    const tabW = Math.min(130, W / tabs.length - 8);
+    const startX = (W - tabW * tabs.length - 8 * (tabs.length - 1)) / 2;
+
+    tabs.forEach((tab, i) => {
+      const tx = startX + i * (tabW + 8);
+      const ty = H - navH + 6;
+      const isActive = tab.key === 'city';
+
+      const tabG = this.add.graphics().setScrollFactor(0).setDepth(991);
+      tabG.fillStyle(isActive ? 0x8a6018 : 0x2a2010, 1);
+      tabG.fillRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+      if (isActive) {
+        tabG.fillStyle(0xc8a030, 0.3);
+        tabG.fillRoundedRect(tx + 1, ty + 1, tabW - 2, 18, { tl: 4, tr: 4, bl: 0, br: 0 });
+      }
+      tabG.lineStyle(1, isActive ? 0xd4aa40 : 0x5a4a20, 1);
+      tabG.strokeRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+
+      const label = this.add.text(tx + tabW / 2, ty + 20, tab.label, {
+        fontSize: '12px',
+        color: isActive ? '#d4aa40' : '#888070',
+        fontStyle: isActive ? 'bold' : 'normal',
+        fontFamily: 'Georgia, serif',
+      }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(992);
+
+      if (tab.key === 'world') {
+        const hitZone = this.add.zone(tx, ty, tabW, 40)
+          .setOrigin(0, 0).setScrollFactor(0).setDepth(993)
+          .setInteractive({ useHandCursor: true });
+        hitZone.on('pointerdown', () => {
+          this.scene.start('WorldMapScene', { state: this.state });
+        });
+        hitZone.on('pointerover', () => {
+          tabG.clear();
+          tabG.fillStyle(0x5a4018, 1);
+          tabG.fillRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+          tabG.lineStyle(1, 0x8a6a20, 1);
+          tabG.strokeRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+          label.setColor('#d4aa40');
+        });
+        hitZone.on('pointerout', () => {
+          tabG.clear();
+          tabG.fillStyle(0x2a2010, 1);
+          tabG.fillRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+          tabG.lineStyle(1, 0x5a4a20, 1);
+          tabG.strokeRoundedRect(tx, ty, tabW, 40, { tl: 4, tr: 4, bl: 0, br: 0 });
+          label.setColor('#888070');
+        });
+      }
+    });
+
+    // Construction queue widget (top-left corner below HUD)
+    this.makeConstructionWidget();
+  }
+
+  private makeConstructionWidget(): void {
+    // This will be updated each frame via updateConstructionTimers
+    // Placeholder slot drawn here; timer text is updated live
   }
 }
 
