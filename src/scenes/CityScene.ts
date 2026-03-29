@@ -40,9 +40,6 @@ export class CityScene extends Phaser.Scene {
   private constructTimers  = new Map<string, Phaser.GameObjects.Text>();
   private buildingPanel!: BuildingPanel;
   private lastSave = 0;
-  private isDragging = false;
-  private dragStart  = { x: 0, y: 0 };
-  private camStart   = { x: 0, y: 0 };
 
   // Right panel graphics refs for live update
   private resTexts:  Record<string, Phaser.GameObjects.Text> = {};
@@ -55,9 +52,7 @@ export class CityScene extends Phaser.Scene {
     const saved = loadGame();
     this.state = saved ?? defaultState();
 
-    // Camera viewport — inset for right panel, top bar, bottom bar
-    const W = this.scale.width, H = this.scale.height;
-    this.cameras.main.setViewport(0, TOP_H, W - RIGHT_W, H - TOP_H - BOT_H);
+    // Full-screen camera so setScrollFactor(0) UI elements stay locked to screen edges
     this.cameras.main.setBackgroundColor(0x2a4a14);
 
     this.buildingPanel = new BuildingPanel(this);
@@ -103,7 +98,7 @@ export class CityScene extends Phaser.Scene {
         const t = this.add.image(sx + TILE_W / 2, sy + TILE_H / 2, key)
           .setDepth(isoDepth(x, y))
           .setInteractive();
-        t.on('pointerdown', () => { if (!this.isDragging) this.buildingPanel.hide(); });
+        t.on('pointerdown', () => this.buildingPanel.hide());
       }
     }
   }
@@ -143,22 +138,19 @@ export class CityScene extends Phaser.Scene {
       .setDepth(isoDepth(b.tileX, b.tileY) + 0.5)
       .setInteractive({ useHandCursor: true });
 
-    // Scale PNG assets to fit the tile footprint
+    // Scale PNG assets to fit within one tile width
     if (b.type === 'barracks') {
-      const targetW = TILE_W * 1.5;
-      sprite.setDisplaySize(targetW, targetW * sprite.height / sprite.width);
+      sprite.setScale(TILE_W / sprite.width);
     }
 
     sprite.on('pointerover', () => sprite.setTint(0xddddff));
     sprite.on('pointerout',  () => sprite.clearTint());
     sprite.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
-      if (!this.isDragging) {
-        this.buildingPanel.show(b, this.state, () => {
-          this.showConstructOverlay(b);
-          this.updateResourcePanel();
-        });
-        ptr.event.stopPropagation();
-      }
+      this.buildingPanel.show(b, this.state, () => {
+        this.showConstructOverlay(b);
+        this.updateResourcePanel();
+      });
+      ptr.event.stopPropagation();
     });
 
     this.buildingSprites.set(b.id, sprite);
@@ -214,68 +206,36 @@ export class CityScene extends Phaser.Scene {
   private centerCamera(): void {
     const cam = this.cameras.main;
     const W = this.scale.width, H = this.scale.height;
-    const vpW = W - RIGHT_W;
-    const vpH = H - TOP_H - BOT_H;
 
-    // Grid diamond dimensions in world space
-    const gridWorldW = GRID * TILE_W;
-    const gridWorldH = GRID * TILE_H;
+    // Grid center in world space (center of the 6×6 diamond)
+    const { x: wx, y: wy } = tileToScreen(GRID / 2 - 0.5, GRID / 2 - 0.5);
+    const gridCenterX = wx + TILE_W / 2;  // 64
+    const gridCenterY = wy + TILE_H / 2;  // 192
 
-    // Auto-fit zoom so grid fills the viewport with 12% padding
-    const zoom = Math.min(vpW / gridWorldW, vpH / gridWorldH) * 0.88;
+    // Auto-fit zoom for small screens; never zoom in beyond 1.0
+    const gridWorldW = GRID * TILE_W;  // 768
+    const gridWorldH = GRID * TILE_H;  // 384
+    const zoom = Math.min(
+      1.0,
+      Math.min((W - RIGHT_W) / gridWorldW, (H - TOP_H - BOT_H) / gridWorldH) * 0.9
+    );
     cam.setZoom(zoom);
 
-    // Geometric center of the 6×6 diamond
-    const { x: wx, y: wy } = tileToScreen(GRID / 2 - 0.5, GRID / 2 - 0.5);
-    const centerX = wx + TILE_W / 2;
-    const centerY = wy + TILE_H / 2;
+    // Center of the usable area (screen space, between all three UI panels)
+    const usableCenterX = (W - RIGHT_W) / 2;
+    const usableCenterY = (H + TOP_H - BOT_H) / 2;
 
-    // Tight bounds: just large enough to center the grid + pan margin
-    const margin = 200;
-    cam.setBounds(
-      centerX - vpW / zoom / 2 - margin,
-      centerY - vpH / zoom / 2 - margin,
-      vpW / zoom + margin * 2,
-      vpH / zoom + margin * 2,
+    // Direct scroll: (gridCenter - scroll) * zoom = usableCenter
+    cam.setScroll(
+      gridCenterX - usableCenterX / zoom,
+      gridCenterY - usableCenterY / zoom
     );
-    cam.centerOn(centerX, centerY);
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
 
   private setupInput(): void {
-    const cam = this.cameras.main;
-
-    this.input.on('wheel', (_p: any, _g: any, _dx: number, dy: number) => {
-      cam.setZoom(Phaser.Math.Clamp(cam.zoom - dy * 0.001, 0.35, 2.5));
-    });
-
-    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
-      this.isDragging = false;
-      this.dragStart = { x: ptr.x, y: ptr.y };
-      this.camStart  = { x: cam.scrollX, y: cam.scrollY };
-    });
-
-    this.input.on('pointermove', (ptr: Phaser.Input.Pointer) => {
-      if (!ptr.isDown) return;
-      const dx = ptr.x - this.dragStart.x, dy = ptr.y - this.dragStart.y;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) this.isDragging = true;
-      if (this.isDragging) {
-        cam.scrollX = this.camStart.x - dx / cam.zoom;
-        cam.scrollY = this.camStart.y - dy / cam.zoom;
-      }
-    });
-
-    this.input.on('pointerup', () => { setTimeout(() => { this.isDragging = false; }, 0); });
-
-    const keys = this.input.keyboard!.addKeys({ up:'W', down:'S', left:'A', right:'D' }) as any;
-    this.events.on('update', () => {
-      const sp = 6 / cam.zoom;
-      if (keys.left.isDown)  cam.scrollX -= sp;
-      if (keys.right.isDown) cam.scrollX += sp;
-      if (keys.up.isDown)    cam.scrollY -= sp;
-      if (keys.down.isDown)  cam.scrollY += sp;
-    });
+    // Town view is static — no zoom or pan
   }
 
   // ── Top Bar ───────────────────────────────────────────────────────────────
