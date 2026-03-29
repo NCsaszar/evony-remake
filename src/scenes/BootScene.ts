@@ -47,51 +47,41 @@ export class BootScene extends Phaser.Scene {
   }
 
   private isoTile(key: string, top: number, _side: number, noise: boolean): void {
-    const TW = 128, TH = 64;
+    const S = 96;
     const g = this.make.graphics();
 
+    // Base fill
     g.fillStyle(top, 1);
-    g.fillPoints([
-      { x: TW / 2, y: 0 },
-      { x: TW,     y: TH / 2 },
-      { x: TW / 2, y: TH },
-      { x: 0,      y: TH / 2 },
-    ], true);
+    g.fillRect(0, 0, S, S);
 
+    // Subtle noise
     if (noise) {
-      const hi = Phaser.Display.Color.ValueToColor(top).lighten(8).color;
-      const lo = Phaser.Display.Color.ValueToColor(top).darken(8).color;
-      const pts = [[22,26],[38,16],[54,24],[72,18],[88,28],[104,20],
-                   [28,38],[48,44],[66,48],[84,40],[98,34],
-                   [38,54],[60,56],[82,52]];
-      pts.forEach(([px, py], i) => {
-        g.fillStyle(i % 2 === 0 ? hi : lo, 0.55);
-        g.fillRect(px, py, 3, 2);
-      });
+      const hi = Phaser.Display.Color.ValueToColor(top).lighten(7).color;
+      const lo = Phaser.Display.Color.ValueToColor(top).darken(7).color;
+      for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 4; col++) {
+          g.fillStyle((row + col) % 2 === 0 ? hi : lo, 0.38);
+          g.fillRect(8 + col * 22, 8 + row * 22, 5, 4);
+        }
+      }
     }
 
+    // Grid line
     g.lineStyle(1, 0x000000, 0.18);
-    g.strokePoints([
-      { x: TW / 2, y: 0 }, { x: TW, y: TH / 2 },
-      { x: TW / 2, y: TH }, { x: 0, y: TH / 2 },
-    ], true);
+    g.strokeRect(0.5, 0.5, S - 1, S - 1);
 
-    g.generateTexture(key, TW, TH);
+    g.generateTexture(key, S, S);
     g.destroy();
   }
 
   private isoHighlight(): void {
-    const TW = 128, TH = 64;
+    const S = 96;
     const g = this.make.graphics();
-    g.fillStyle(0xffee88, 0.28);
-    g.fillPoints([
-      { x: TW/2, y:0 }, { x:TW, y:TH/2 }, { x:TW/2, y:TH }, { x:0, y:TH/2 },
-    ], true);
-    g.lineStyle(2, 0xffee44, 0.85);
-    g.strokePoints([
-      { x: TW/2, y:0 }, { x:TW, y:TH/2 }, { x:TW/2, y:TH }, { x:0, y:TH/2 },
-    ], true);
-    g.generateTexture('tile_highlight', TW, TH);
+    g.fillStyle(0xffee88, 0.3);
+    g.fillRect(0, 0, S, S);
+    g.lineStyle(2, 0xffee44, 0.9);
+    g.strokeRect(1, 1, S - 2, S - 2);
+    g.generateTexture('tile_highlight', S, S);
     g.destroy();
   }
 

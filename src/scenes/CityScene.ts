@@ -91,6 +91,13 @@ export class CityScene extends Phaser.Scene {
   // ── Tile grid ─────────────────────────────────────────────────────────────
 
   private buildTiles(): void {
+    // Outer border around the whole grid
+    const border = this.add.graphics().setDepth(-1);
+    border.lineStyle(3, 0x2a5a10, 1);
+    border.strokeRect(-3, -3, GRID * TILE_W + 6, GRID * TILE_H + 6);
+    border.lineStyle(1, 0x4a8a20, 0.5);
+    border.strokeRect(-1, -1, GRID * TILE_W + 2, GRID * TILE_H + 2);
+
     for (let y = 0; y < GRID; y++) {
       for (let x = 0; x < GRID; x++) {
         const { x: sx, y: sy } = tileToScreen(x, y);
@@ -133,20 +140,23 @@ export class CityScene extends Phaser.Scene {
     const { x: sx, y: sy } = tileToScreen(b.tileX, b.tileY);
     this.buildingSprites.get(b.id)?.destroy();
 
-    const sprite = this.add.image(sx + TILE_W / 2, sy, `building_${b.type}`)
-      .setOrigin(0.5, 1)
+    // Center sprite on tile
+    const cx = sx + TILE_W / 2;
+    const cy = sy + TILE_H / 2;
+
+    const sprite = this.add.image(cx, cy, `building_${b.type}`)
+      .setOrigin(0.5, 0.5)
       .setDepth(isoDepth(b.tileX, b.tileY) + 0.5)
       .setInteractive({ useHandCursor: true });
 
-    // All PNG-loaded buildings scale to fit within one tile width
-    // (townhall slightly larger as the centrepiece)
+    // Scale PNG buildings to ~68% of tile (townhall 80% as centrepiece)
     const PNG_BUILDINGS = new Set([
       'barracks','townhall','farm','sawmill','quarry','ironmine',
       'warehouse','cottage','academy','stable','workshop',
     ]);
     if (PNG_BUILDINGS.has(b.type)) {
-      const targetW = b.type === 'townhall' ? TILE_W * 1.1 : TILE_W * 0.85;
-      sprite.setScale(targetW / sprite.width);
+      const fill = b.type === 'townhall' ? 0.80 : 0.68;
+      sprite.setScale((TILE_W * fill) / sprite.width);
     }
 
     sprite.on('pointerover', () => sprite.setTint(0xddddff));
@@ -170,9 +180,11 @@ export class CityScene extends Phaser.Scene {
     this.constructSprites.get(b.id)?.destroy();
     this.constructTimers.get(b.id)?.destroy();
     const { x: sx, y: sy } = tileToScreen(b.tileX, b.tileY);
-    const sc = this.add.image(sx + TILE_W / 2, sy - 8, 'scaffold')
-      .setOrigin(0.5, 1).setDepth(isoDepth(b.tileX, b.tileY) + 0.9).setAlpha(0.75);
-    const txt = this.add.text(sx + TILE_W / 2, sy - 78, '', {
+    const cx = sx + TILE_W / 2, cy = sy + TILE_H / 2;
+    const sc = this.add.image(cx, cy, 'scaffold')
+      .setOrigin(0.5, 0.5).setDepth(isoDepth(b.tileX, b.tileY) + 0.9).setAlpha(0.75)
+      .setDisplaySize(TILE_W * 0.8, TILE_H * 0.8);
+    const txt = this.add.text(cx, sy - 4, '', {
       fontSize: '11px', color: '#ffcc00',
       backgroundColor: '#00000099', padding: { x: 3, y: 2 },
     }).setOrigin(0.5, 1).setDepth(isoDepth(b.tileX, b.tileY) + 1);
@@ -213,14 +225,11 @@ export class CityScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const W = this.scale.width, H = this.scale.height;
 
-    // Grid center in world space (center of the 6×6 diamond)
-    const { x: wx, y: wy } = tileToScreen(GRID / 2 - 0.5, GRID / 2 - 0.5);
-    const gridCenterX = wx + TILE_W / 2;  // 64
-    const gridCenterY = wy + TILE_H / 2;  // 192
-
-    // Auto-fit zoom for small screens; never zoom in beyond 1.0
-    const gridWorldW = GRID * TILE_W;  // 768
-    const gridWorldH = GRID * TILE_H;  // 384
+    // Grid center in world space (flat 6×6 grid)
+    const gridWorldW = GRID * TILE_W;  // 576
+    const gridWorldH = GRID * TILE_H;  // 576
+    const gridCenterX = gridWorldW / 2;
+    const gridCenterY = gridWorldH / 2;
     const zoom = Math.min(
       1.0,
       Math.min((W - RIGHT_W) / gridWorldW, (H - TOP_H - BOT_H) / gridWorldH) * 0.9
