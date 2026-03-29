@@ -138,9 +138,15 @@ export class CityScene extends Phaser.Scene {
       .setDepth(isoDepth(b.tileX, b.tileY) + 0.5)
       .setInteractive({ useHandCursor: true });
 
-    // Scale PNG assets to fit within one tile width
-    if (b.type === 'barracks') {
-      sprite.setScale(TILE_W / sprite.width);
+    // All PNG-loaded buildings scale to fit within one tile width
+    // (townhall slightly larger as the centrepiece)
+    const PNG_BUILDINGS = new Set([
+      'barracks','townhall','farm','sawmill','quarry','ironmine',
+      'warehouse','cottage','academy','stable','workshop',
+    ]);
+    if (PNG_BUILDINGS.has(b.type)) {
+      const targetW = b.type === 'townhall' ? TILE_W * 1.1 : TILE_W * 0.85;
+      sprite.setScale(targetW / sprite.width);
     }
 
     sprite.on('pointerover', () => sprite.setTint(0xddddff));

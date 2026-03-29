@@ -4,7 +4,18 @@ export class BootScene extends Phaser.Scene {
   constructor() { super({ key: 'BootScene' }); }
 
   preload(): void {
-    this.load.image('building_barracks', 'assets/barracks.png');
+    // PNG building assets (StonesFreeWenrexa gem set + barracks)
+    this.load.image('building_barracks',  'assets/barracks.png');
+    this.load.image('building_townhall',  'assets/townhall.png');
+    this.load.image('building_farm',      'assets/farm.png');
+    this.load.image('building_sawmill',   'assets/sawmill.png');
+    this.load.image('building_quarry',    'assets/quarry.png');
+    this.load.image('building_ironmine',  'assets/ironmine.png');
+    this.load.image('building_warehouse', 'assets/warehouse.png');
+    this.load.image('building_cottage',   'assets/cottage.png');
+    this.load.image('building_academy',   'assets/academy.png');
+    this.load.image('building_stable',    'assets/stable.png');
+    this.load.image('building_workshop',  'assets/workshop.png');
     this.genTiles();
     this.genBuildings();
     this.genUI();
@@ -87,17 +98,8 @@ export class BootScene extends Phaser.Scene {
   // ── Buildings ──────────────────────────────────────────────────────────────
 
   private genBuildings(): void {
-    this.makeTownHall();
-    this.makeFarm();
-    this.makeSawmill();
-    this.makeQuarry();
-    this.makeIronMine();
-    this.makeWarehouse();
-    this.makeCottage();
-    // 'building_barracks' loaded from assets/barracks.png in preload()
-    this.makeStable();
-    this.makeWorkshop();
-    this.makeAcademy();
+    // townhall, farm, sawmill, quarry, ironmine, warehouse, cottage,
+    // barracks, stable, workshop, academy → loaded as PNGs in preload()
     this.makeForge();
     this.makeEmbassy();
     this.makeMarket();
