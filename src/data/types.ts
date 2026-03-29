@@ -93,4 +93,5 @@ export interface GameState {
   playerX: number;   // city position on world map
   playerY: number;
   taxRate: number;   // 0–100
+  version?: number;
 }

@@ -4,6 +4,7 @@ export class BootScene extends Phaser.Scene {
   constructor() { super({ key: 'BootScene' }); }
 
   preload(): void {
+    this.load.image('building_barracks', 'assets/barracks.png');
     this.genTiles();
     this.genBuildings();
     this.genUI();
@@ -93,7 +94,7 @@ export class BootScene extends Phaser.Scene {
     this.makeIronMine();
     this.makeWarehouse();
     this.makeCottage();
-    this.makeBarracks();
+    // 'building_barracks' loaded from assets/barracks.png in preload()
     this.makeStable();
     this.makeWorkshop();
     this.makeAcademy();
@@ -358,40 +359,6 @@ export class BootScene extends Phaser.Scene {
     g.fillCircle(93, 16, 5);
 
     g.generateTexture('building_cottage', W, H);
-    g.destroy();
-  }
-
-  private makeBarracks(): void {
-    const W = 256, H = 130;
-    const g = this.make.graphics();
-    const S = 0x706858;
-    this.isoBox(g, 0, 52, 256, 64, 48, S, this.darken(S,10), this.darken(S,22));
-    // Stone texture
-    for (let i = 0; i < 16; i++) {
-      g.fillStyle(i%2===0?this.lighten(S,8):this.darken(S,8),0.3);
-      g.fillRect(8+(i*29)%220, 65+(i*11)%38, 6, 3);
-    }
-    // Battlements
-    for (let i = 0; i < 7; i++) {
-      if (i%2===0) {
-        g.fillStyle(this.lighten(S,10), 1);
-        g.fillRect(18+i*32, 42, 18, 12);
-        g.lineStyle(1,0x000000,0.3);
-        g.strokeRect(18+i*32, 42, 18, 12);
-      }
-    }
-    // Banner
-    g.fillStyle(0x880010, 1);
-    g.fillRect(124, 18, 3, 32); g.fillTriangle(127,18,127,30,148,24);
-    // Gate
-    g.fillStyle(0x080608, 1);
-    g.fillEllipse(128, 74, 36, 22); g.fillRect(110,74,36,18);
-    // Portcullis
-    g.lineStyle(1, 0x404030, 0.7);
-    for (let i = 0; i < 4; i++) g.lineBetween(112+i*8,66,112+i*8,92);
-    g.lineBetween(110,76,146,76); g.lineBetween(110,84,146,84);
-
-    g.generateTexture('building_barracks', W, H);
     g.destroy();
   }
 

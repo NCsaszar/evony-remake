@@ -2,23 +2,22 @@ import type { GameState } from '../data/types';
 import { generateWorldMap } from '../data/world';
 import type { NpcCamp } from '../data/world';
 
-const SAVE_KEY = 'evony_save';
-const WORLD_KEY = 'evony_world';
+const SAVE_KEY    = 'evony_save';
+const WORLD_KEY   = 'evony_world';
+const SAVE_VERSION = 2;
 
 export function defaultState(): GameState {
   return {
+    version: SAVE_VERSION,
     resources: { food: 5000, lumber: 5000, stone: 3000, iron: 1000, gold: 2000 },
     buildings: [
-      { id: 'b0', type: 'townhall',    level: 1, tileX: 10, tileY: 10 },
-      { id: 'b1', type: 'farm',        level: 1, tileX: 3,  tileY: 3  },
-      { id: 'b2', type: 'farm',        level: 1, tileX: 4,  tileY: 3  },
-      { id: 'b3', type: 'sawmill',     level: 1, tileX: 3,  tileY: 4  },
-      { id: 'b4', type: 'sawmill',     level: 1, tileX: 4,  tileY: 4  },
-      { id: 'b5', type: 'quarry',      level: 1, tileX: 16, tileY: 3  },
-      { id: 'b6', type: 'ironmine',    level: 1, tileX: 16, tileY: 4  },
-      { id: 'b7', type: 'barracks',    level: 1, tileX: 7,  tileY: 10 },
-      { id: 'b8', type: 'cottage',     level: 1, tileX: 12, tileY: 7  },
-      { id: 'b9', type: 'warehouse',   level: 1, tileX: 13, tileY: 7  },
+      { id: 'b0', type: 'townhall',  level: 1, tileX: 2, tileY: 2 },
+      { id: 'b1', type: 'barracks',  level: 1, tileX: 4, tileY: 0 },
+      { id: 'b2', type: 'farm',      level: 1, tileX: 0, tileY: 0 },
+      { id: 'b3', type: 'sawmill',   level: 1, tileX: 0, tileY: 2 },
+      { id: 'b4', type: 'cottage',   level: 1, tileX: 0, tileY: 4 },
+      { id: 'b5', type: 'warehouse', level: 1, tileX: 4, tileY: 4 },
+      { id: 'b6', type: 'academy',   level: 1, tileX: 2, tileY: 4 },
     ],
     troops: { warrior: 50, scout: 20 },
     heroes: [],
@@ -40,7 +39,10 @@ export function loadGame(): GameState | null {
   const raw = localStorage.getItem(SAVE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as GameState;
+    const state = JSON.parse(raw) as GameState;
+    // Discard saves from older versions (incompatible tile positions)
+    if (!state.version || state.version < SAVE_VERSION) return null;
+    return state;
   } catch {
     return null;
   }

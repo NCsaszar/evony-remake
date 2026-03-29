@@ -7,11 +7,10 @@ import { checkConstructions, getBuildingInProgress } from '../systems/BuildingSy
 import { loadGame, defaultState, saveGame } from '../systems/SaveSystem';
 import { BuildingPanel } from '../ui/BuildingPanel';
 
-const GRID = 20;
+const GRID = 6;
 const SAVE_INTERVAL = 30_000;
 
 // Evony palette
-const DARK_BG    = 0x0e0c08;
 const PANEL_BG   = 0x1a1408;
 const BORDER     = 0x8a6a20;
 const GOLD       = 0xc8a030;
@@ -21,24 +20,17 @@ const TEXT_GREY  = '#807060';
 const TEXT_GREEN = '#78bb50';
 const TEXT_RED   = '#cc4444';
 
-// Build slot positions (inner city, tile coords)
-const BUILD_SLOTS: [number, number][] = [
-  [7,7],[9,7],[11,7],[13,7],
-  [7,9],[9,9],[11,9],[13,9],
-  [7,11],[9,11],[11,11],[13,11],
-  [7,13],[9,13],[11,13],[13,13],
-];
+// UI layout constants
+const RIGHT_W = 220;
+const TOP_H   = 32;
+const BOT_H   = 54;
 
-// Tree positions around the perimeter
-const TREE_POSITIONS: [number, number][] = [
-  [1,1],[2,1],[3,1],[4,1],[1,2],[1,3],[1,4],
-  [15,1],[16,1],[17,1],[18,1],[18,2],[18,3],[18,4],
-  [1,15],[1,16],[1,17],[1,18],[2,18],[3,18],[4,18],
-  [15,18],[16,18],[17,18],[18,18],[18,15],[18,16],[18,17],
-  [6,2],[8,2],[10,2],[12,2],[14,2],
-  [2,6],[2,8],[2,10],[2,12],[2,14],
-  [6,17],[8,17],[10,17],[12,17],[14,17],
-  [17,6],[17,8],[17,10],[17,12],[17,14],
+// Build slot positions within 6×6 grid
+const BUILD_SLOTS: [number, number][] = [
+  [0,0],[2,0],[4,0],
+  [0,2],[4,2],
+  [0,4],[2,4],[4,4],
+  [5,1],[5,3],[1,5],[3,5],
 ];
 
 export class CityScene extends Phaser.Scene {
@@ -63,19 +55,15 @@ export class CityScene extends Phaser.Scene {
     const saved = loadGame();
     this.state = saved ?? defaultState();
 
-    // Camera viewport — inset to leave room for right panel + bottom bar + top bar
+    // Camera viewport — inset for right panel, top bar, bottom bar
     const W = this.scale.width, H = this.scale.height;
-    const RIGHT_W  = 220;
-    const TOP_H    = 32;
-    const BOT_H    = 54;
     this.cameras.main.setViewport(0, TOP_H, W - RIGHT_W, H - TOP_H - BOT_H);
-    this.cameras.main.setBackgroundColor(0x3a5a1a); // dark green bg behind tiles
+    this.cameras.main.setBackgroundColor(0x2a4a14);
 
     this.buildingPanel = new BuildingPanel(this);
 
     this.buildTiles();
     this.buildSlotMarkers();
-    this.buildTrees();
     this.renderAllBuildings();
     this.centerCamera();
     this.setupInput();
@@ -121,11 +109,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private tileKey(x: number, y: number): string {
-    // Inner city area = alternating grass shades
-    if (x >= 5 && x <= 14 && y >= 5 && y <= 14) {
-      return (x + y) % 2 === 0 ? 'tile_grass' : 'tile_grass2';
-    }
-    return 'tile_grass';
+    return (x + y) % 2 === 0 ? 'tile_grass' : 'tile_grass2';
   }
 
   // ── Build slot markers ────────────────────────────────────────────────────
@@ -144,18 +128,6 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
-  // ── Trees ─────────────────────────────────────────────────────────────────
-
-  private buildTrees(): void {
-    for (const [tx, ty] of TREE_POSITIONS) {
-      const { x: sx, y: sy } = tileToScreen(tx, ty);
-      this.add.image(sx + TILE_W / 2, sy, 'tree')
-        .setOrigin(0.5, 1)
-        .setDepth(isoDepth(tx, ty) + 0.5)
-        .setScale(0.85);
-    }
-  }
-
   // ── Buildings ─────────────────────────────────────────────────────────────
 
   private renderAllBuildings(): void {
@@ -170,6 +142,12 @@ export class CityScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(isoDepth(b.tileX, b.tileY) + 0.5)
       .setInteractive({ useHandCursor: true });
+
+    // Scale PNG assets to fit the tile footprint
+    if (b.type === 'barracks') {
+      const targetW = TILE_W * 1.5;
+      sprite.setDisplaySize(targetW, targetW * sprite.height / sprite.width);
+    }
 
     sprite.on('pointerover', () => sprite.setTint(0xddddff));
     sprite.on('pointerout',  () => sprite.clearTint());
@@ -235,14 +213,32 @@ export class CityScene extends Phaser.Scene {
 
   private centerCamera(): void {
     const cam = this.cameras.main;
-    // Center of grid in world space
-    const cx = (GRID / 2);
-    const cy = (GRID / 2);
-    const { x: wx, y: wy } = tileToScreen(cx, cy);
-    cam.centerOn(wx + TILE_W / 2, wy + TILE_H);
-    cam.setZoom(1.0);
-    // Large bounds so dragging works freely
-    cam.setBounds(-2000, -1000, 8000, 6000);
+    const W = this.scale.width, H = this.scale.height;
+    const vpW = W - RIGHT_W;
+    const vpH = H - TOP_H - BOT_H;
+
+    // Grid diamond dimensions in world space
+    const gridWorldW = GRID * TILE_W;
+    const gridWorldH = GRID * TILE_H;
+
+    // Auto-fit zoom so grid fills the viewport with 12% padding
+    const zoom = Math.min(vpW / gridWorldW, vpH / gridWorldH) * 0.88;
+    cam.setZoom(zoom);
+
+    // Geometric center of the 6×6 diamond
+    const { x: wx, y: wy } = tileToScreen(GRID / 2 - 0.5, GRID / 2 - 0.5);
+    const centerX = wx + TILE_W / 2;
+    const centerY = wy + TILE_H / 2;
+
+    // Tight bounds: just large enough to center the grid + pan margin
+    const margin = 200;
+    cam.setBounds(
+      centerX - vpW / zoom / 2 - margin,
+      centerY - vpH / zoom / 2 - margin,
+      vpW / zoom + margin * 2,
+      vpH / zoom + margin * 2,
+    );
+    cam.centerOn(centerX, centerY);
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
