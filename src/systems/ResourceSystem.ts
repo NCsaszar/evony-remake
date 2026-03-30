@@ -2,8 +2,8 @@ import type { GameState, Resources } from '../data/types';
 import { BUILDINGS } from '../data/buildings';
 import { TROOPS } from '../data/troops';
 
-export const STORAGE_BASE = 50000;
-export const STORAGE_PER_WAREHOUSE_LEVEL = 20000;
+export const STORAGE_BASE = 2_000_000_000;      // 2 billion cap
+export const STORAGE_PER_WAREHOUSE_LEVEL = 0;   // warehouse repurposed later
 
 /** Compute hourly production rates from all buildings + bonuses. */
 export function computeProduction(state: GameState): Resources {

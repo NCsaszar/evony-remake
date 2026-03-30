@@ -52,6 +52,11 @@ export function checkConstructions(state: GameState): BuildingType[] {
   return finished;
 }
 
+// City-zone building types — shared with CityScene for zone-aware collision
+const CITY_BUILDING_TYPES = new Set([
+  'farm', 'sawmill', 'quarry', 'ironmine',
+]);
+
 /** Place a new building on the grid. Returns error or null. */
 export function placeBuilding(
   state: GameState,
@@ -63,9 +68,13 @@ export function placeBuilding(
   const cost = def.levels[0].cost;
   if (!canAfford(state, cost)) return 'Not enough resources.';
 
-  // Check collision
+  // Zone-aware collision: city buildings only conflict with other city buildings,
+  // town buildings only conflict with other town buildings (they share world coords).
+  const isNewCity = CITY_BUILDING_TYPES.has(type);
   for (const b of state.buildings) {
-    if (b.tileX === tileX && b.tileY === tileY) return 'Tile occupied.';
+    if (b.tileX === tileX && b.tileY === tileY) {
+      if (CITY_BUILDING_TYPES.has(b.type) === isNewCity) return 'Tile occupied.';
+    }
   }
 
   deductCost(state, cost);

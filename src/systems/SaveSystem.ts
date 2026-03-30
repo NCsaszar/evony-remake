@@ -4,7 +4,7 @@ import type { NpcCamp } from '../data/world';
 
 const SAVE_KEY    = 'evony_save';
 const WORLD_KEY   = 'evony_world';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 
 export function defaultState(): GameState {
   return {

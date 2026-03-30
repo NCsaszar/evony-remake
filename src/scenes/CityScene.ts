@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { tileToScreen, isoDepth, TILE_W, TILE_H } from '../iso/IsoMap';
+import { isoDepth, TILE_W } from '../iso/IsoMap';
 import type { GameState, BuildingInstance, BuildingType, TroopType } from '../data/types';
 import { BUILDINGS } from '../data/buildings';
 import { TROOPS } from '../data/troops';
@@ -57,6 +57,13 @@ export class CityScene extends Phaser.Scene {
   private buildingPanel!: BuildingPanel;
   private lastSave = 0;
 
+  // Per-view tile size (city tiles scale down to fit grid without camera zoom)
+  private currentTileSize = TILE_W;
+
+  // Dev tools
+  private instantBuildMode = false;
+  private instantBadge?: Phaser.GameObjects.Text;
+
   // Overlay objects (build menu / train panel — mutually exclusive)
   private overlayObjs: Phaser.GameObjects.GameObject[] = [];
 
@@ -89,9 +96,25 @@ export class CityScene extends Phaser.Scene {
     this.buildRightPanel();
     this.buildBottomBar();
     this.lastSave = Date.now();
+
+    // ESC closes any open overlay or panel
+    this.input.keyboard?.on('keydown-ESC', () => {
+      this.clearOverlay();
+      this.buildingPanel.hide();
+      if (this.devOpen) this.toggleDevPanel();
+    });
   }
 
   update(_t: number, delta: number): void {
+    // Instant build mode: complete all pending constructions each tick
+    if (this.instantBuildMode) {
+      const now = Date.now();
+      for (const b of this.state.buildings) {
+        if (b.constructingUntil && b.constructingUntil > now)
+          b.constructingUntil = now - 1;
+      }
+    }
+
     tickResources(this.state, delta / 1000);
     const finished = checkConstructions(this.state);
     finished.forEach(type => {
@@ -117,6 +140,16 @@ export class CityScene extends Phaser.Scene {
   // ── View switching ────────────────────────────────────────────────────────
 
   private buildWorld(): void {
+    // Compute tile size first — city tiles shrink to fit without camera zoom
+    const W = this.scale.width, H = this.scale.height;
+    if (this.viewMode === 'city') {
+      this.currentTileSize = Math.floor(
+        Math.min((W - RIGHT_W) / CITY_GRID, (H - TOP_H - BOT_H) / CITY_GRID) * 0.9
+      );
+    } else {
+      this.currentTileSize = TILE_W;
+    }
+
     this.worldObjs.forEach(o => o.destroy());
     this.worldObjs = [];
     this.buildingSprites.clear();
@@ -127,6 +160,12 @@ export class CityScene extends Phaser.Scene {
     this.buildTiles();
     this.buildSlotMarkers();
     this.renderAllBuildings();
+  }
+
+  /** Convert tile coords to screen using the current view's tile size (no camera zoom needed). */
+  private tileToScreenCS(tx: number, ty: number): { x: number; y: number } {
+    const ts = this.currentTileSize;
+    return { x: tx * ts, y: ty * ts };
   }
 
   private switchView(mode: 'town' | 'city'): void {
@@ -160,16 +199,17 @@ export class CityScene extends Phaser.Scene {
 
   private buildTiles(): void {
     const G = this.grid;
+    const ts = this.currentTileSize;
 
     const border = this.wAdd(this.add.graphics().setDepth(-1));
     border.lineStyle(3, this.viewMode === 'city' ? 0x2a5a2a : 0x2a5a10, 1);
-    border.strokeRect(-3, -3, G*TILE_W+6, G*TILE_H+6);
+    border.strokeRect(-3, -3, G*ts+6, G*ts+6);
     border.lineStyle(1, this.viewMode === 'city' ? 0x4a9a4a : 0x4a8a20, 0.5);
-    border.strokeRect(-1, -1, G*TILE_W+2, G*TILE_H+2);
+    border.strokeRect(-1, -1, G*ts+2, G*ts+2);
 
     // Zone label
     const zoneLabel = this.viewMode === 'city' ? '🌾 Resource Fields' : '🏰 Town';
-    const zlbl = this.wAdd(this.add.text(-2, -18, zoneLabel, {
+    this.wAdd(this.add.text(-2, -18, zoneLabel, {
       fontSize: '11px', fontStyle: 'bold',
       color: this.viewMode === 'city' ? '#88cc88' : '#c8a030',
       fontFamily: 'Georgia, serif',
@@ -179,10 +219,13 @@ export class CityScene extends Phaser.Scene {
     const slots = this.currentSlots();
     for (let y = 0; y < G; y++) {
       for (let x = 0; x < G; x++) {
-        const { x: sx, y: sy } = tileToScreen(x, y);
+        const { x: sx, y: sy } = this.tileToScreenCS(x, y);
         const key = (x+y) % 2 === 0 ? 'tile_grass' : 'tile_grass2';
         const t = this.wAdd(
-          this.add.image(sx+TILE_W/2, sy+TILE_H/2, key).setDepth(isoDepth(x,y)).setInteractive()
+          this.add.image(sx+ts/2, sy+ts/2, key)
+            .setDisplaySize(ts, ts)
+            .setDepth(isoDepth(x,y))
+            .setInteractive()
         ) as Phaser.GameObjects.Image;
 
         const inSlot = slots.some(([tx,ty]) => tx===x && ty===y);
@@ -212,14 +255,16 @@ export class CityScene extends Phaser.Scene {
   // ── Slot markers ──────────────────────────────────────────────────────────
 
   private buildSlotMarkers(): void {
+    const ts = this.currentTileSize;
     for (const [tx,ty] of this.currentSlots()) {
       const occupied = this.state.buildings.some(b => b.tileX===tx && b.tileY===ty && this.inCurrentZone(b));
       if (!occupied) {
-        const { x: sx, y: sy } = tileToScreen(tx, ty);
+        const { x: sx, y: sy } = this.tileToScreenCS(tx, ty);
         this.wAdd(
-          this.add.image(sx+TILE_W/2, sy+TILE_H/2, 'tile_slot')
+          this.add.image(sx+ts/2, sy+ts/2, 'tile_slot')
+            .setDisplaySize(ts, ts)
             .setDepth(isoDepth(tx,ty)+0.1)
-            .setAlpha(this.viewMode === 'city' ? 0.18 : 0.40)
+            .setAlpha(this.viewMode === 'city' ? 0.25 : 0.40)
         );
       }
     }
@@ -234,11 +279,12 @@ export class CityScene extends Phaser.Scene {
   }
 
   private spawnBuilding(b: BuildingInstance): void {
-    const { x: sx, y: sy } = tileToScreen(b.tileX, b.tileY);
+    const ts = this.currentTileSize;
+    const { x: sx, y: sy } = this.tileToScreenCS(b.tileX, b.tileY);
     this.buildingSprites.get(b.id)?.destroy();
     this.buildingLabels.get(b.id)?.destroy();
 
-    const cx = sx + TILE_W/2, cy = sy + TILE_H/2;
+    const cx = sx + ts/2, cy = sy + ts/2;
 
     const sprite = this.wAdd(
       this.add.image(cx, cy, `building_${b.type}`)
@@ -249,13 +295,13 @@ export class CityScene extends Phaser.Scene {
 
     if (PNG_BUILDINGS.has(b.type)) {
       const fill = b.type === 'townhall' ? 0.76 : 0.60;
-      sprite.setScale((TILE_W * fill) / sprite.width);
+      sprite.setScale((ts * fill) / sprite.width);
     }
 
-    // Name label in lower portion of tile
+    // Name label at bottom of tile
     const def = BUILDINGS[b.type as keyof typeof BUILDINGS];
     const lbl = this.wAdd(
-      this.add.text(cx, sy + TILE_H - 4,
+      this.add.text(cx, sy + ts - 4,
         `${def?.label ?? b.type}${b.level > 1 ? ` ${b.level}` : ''}`, {
         fontSize: '8px', color: '#eeddb8',
         backgroundColor: '#000000aa', padding: { x: 3, y: 1 },
@@ -289,12 +335,13 @@ export class CityScene extends Phaser.Scene {
   private showConstructOverlay(b: BuildingInstance): void {
     this.constructSprites.get(b.id)?.destroy();
     this.constructTimers.get(b.id)?.destroy();
-    const { x: sx, y: sy } = tileToScreen(b.tileX, b.tileY);
-    const cx = sx+TILE_W/2, cy = sy+TILE_H/2;
+    const ts = this.currentTileSize;
+    const { x: sx, y: sy } = this.tileToScreenCS(b.tileX, b.tileY);
+    const cx = sx+ts/2, cy = sy+ts/2;
     const sc = this.wAdd(
       this.add.image(cx, cy, 'scaffold')
         .setOrigin(0.5,0.5).setDepth(isoDepth(b.tileX,b.tileY)+0.9)
-        .setAlpha(0.75).setDisplaySize(TILE_W*0.75,TILE_H*0.75)
+        .setAlpha(0.75).setDisplaySize(ts*0.75,ts*0.75)
     ) as Phaser.GameObjects.Image;
     const txt = this.wAdd(
       this.add.text(cx, sy-4,'',{fontSize:'10px',color:'#ffcc00',
@@ -335,10 +382,16 @@ export class CityScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const W = this.scale.width, H = this.scale.height;
     const G = this.grid;
-    const gW = G*TILE_W, gH = G*TILE_H;
-    const zoom = Math.min(1.0, Math.min((W-RIGHT_W)/gW, (H-TOP_H-BOT_H)/gH)*0.9);
-    cam.setZoom(zoom);
-    cam.setScroll(gW/2-(W-RIGHT_W)/2/zoom, gH/2-(H+TOP_H-BOT_H)/2/zoom);
+    const ts = this.currentTileSize;
+    const gW = G * ts, gH = G * ts;
+
+    // Never zoom the camera — setScrollFactor(0) UI elements shift when zoom != 1.
+    // Instead, tile size is scaled down in buildWorld() for city view.
+    cam.setZoom(1);
+    cam.setScroll(
+      gW / 2 - (W - RIGHT_W) / 2,
+      gH / 2 - (TOP_H + (H - TOP_H - BOT_H) / 2)
+    );
   }
 
   // ── Overlay helpers ───────────────────────────────────────────────────────
@@ -380,8 +433,8 @@ export class CityScene extends Phaser.Scene {
     const cityAvail: BuildingType[] = ['farm','sawmill','quarry','ironmine'];
     const avail = this.viewMode === 'city' ? cityAvail : townAvail;
 
-    const rowH = 52;
-    const PH = Math.min(avail.length*rowH+44, 340);
+    const rowH = 54;
+    const PH = Math.min(avail.length*rowH+48, 460);
 
     const bg = this.oAdd(this.add.graphics().setScrollFactor(0).setDepth(2100));
     bg.fillStyle(PANEL_BG,0.97); bg.fillRoundedRect(px,py,PW,PH,6);
@@ -409,7 +462,7 @@ export class CityScene extends Phaser.Scene {
       return;
     }
 
-    avail.slice(0, Math.floor((PH-44)/rowH)).forEach((type,i)=>{
+    avail.forEach((type,i)=>{
       const def = BUILDINGS[type];
       if (!def) return;
       const ry = py+30+i*rowH;
@@ -484,9 +537,9 @@ export class CityScene extends Phaser.Scene {
     const trainable = troopsByBuilding[b.type] ?? [];
 
     const W = this.scale.width;
-    const PW = 310;
-    const rowH = 54;
-    const PH = Math.min(trainable.length*rowH+46, 380);
+    const PW = 400;
+    const rowH = 58;
+    const PH = Math.min(trainable.length*rowH+46, 420);
     const px = Math.max(4, Math.floor((W-RIGHT_W-PW)/2));
     const py = TOP_H + 6;
 
@@ -535,16 +588,50 @@ export class CityScene extends Phaser.Scene {
         fontSize:'8px',color:TEXT_GREY,fontFamily:'Arial',
       }).setScrollFactor(0).setDepth(2102));
 
-      ([10,100] as const).forEach((qty,qi)=>{
-        const bx=px+PW-130+qi*66, by=ry+12, bw=60, bh=28;
-        const totalFood   = (cost.food??0)*qty;
-        const totalGold   = (cost.gold??0)*qty;
-        const totalLumber = (cost.lumber??0)*qty;
-        const totalStone  = (cost.stone??0)*qty;
-        const totalIron   = (cost.iron??0)*qty;
-        const r = this.state.resources;
-        const canAff = r.food>=totalFood && r.gold>=totalGold &&
-                       r.lumber>=totalLumber && r.stone>=totalStone && r.iron>=totalIron;
+      const QTY_BTNS: Array<{ label: string; qty: number | 'custom' }> = [
+        { label:'+10',    qty:10 },
+        { label:'+100',   qty:100 },
+        { label:'+1K',    qty:1000 },
+        { label:'+10K',   qty:10000 },
+        { label:'Custom', qty:'custom' },
+      ];
+      const bw=68, bh=26, bGap=4;
+      const totalBtnW = QTY_BTNS.length * bw + (QTY_BTNS.length-1) * bGap;
+      const btnStartX = px + PW - totalBtnW - 8;
+
+      QTY_BTNS.forEach(({label,qty},qi)=>{
+        const bx = btnStartX + qi*(bw+bGap);
+        const by = ry + 16;
+
+        const getQty = (): number => {
+          if (qty === 'custom') {
+            const raw = window.prompt('How many troops to train?', '100');
+            if (!raw) return 0;
+            const n = parseInt(raw, 10);
+            return isNaN(n) || n <= 0 ? 0 : n;
+          }
+          return qty as number;
+        };
+
+        const totalCost = (q: number) => ({
+          food:   (cost.food??0)*q,
+          gold:   (cost.gold??0)*q,
+          lumber: (cost.lumber??0)*q,
+          stone:  (cost.stone??0)*q,
+          iron:   (cost.iron??0)*q,
+        });
+
+        const canAffQty = (q: number) => {
+          if (q <= 0) return false;
+          const tc = totalCost(q);
+          const r = this.state.resources;
+          return r.food>=tc.food && r.gold>=tc.gold && r.lumber>=tc.lumber &&
+                 r.stone>=tc.stone && r.iron>=tc.iron;
+        };
+
+        // For fixed qtys, check affordability now; for custom, always show active
+        const isCustom = qty === 'custom';
+        const canAff = isCustom ? true : canAffQty(qty as number);
 
         const bg2 = this.oAdd(this.add.graphics().setScrollFactor(0).setDepth(2102));
         const drawBtn = (h: boolean) => {
@@ -556,30 +643,31 @@ export class CityScene extends Phaser.Scene {
         };
         drawBtn(false);
 
-        this.oAdd(this.add.text(bx+bw/2,by+bh/2,`+${qty}`,{
-          fontSize:'11px',fontStyle:'bold',color:canAff?'#aaaaff':TEXT_GREY,fontFamily:'Georgia, serif',
+        this.oAdd(this.add.text(bx+bw/2,by+bh/2,label,{
+          fontSize:'9px',fontStyle:'bold',color:canAff?'#aaaaff':TEXT_GREY,fontFamily:'Georgia, serif',
         }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(2103));
 
-        if (canAff) {
-          const z = this.oAdd(
-            this.add.zone(bx,by,bw,bh).setOrigin(0,0).setScrollFactor(0).setDepth(2104)
-              .setInteractive({useHandCursor:true})
-          ) as Phaser.GameObjects.Zone;
-          z.on('pointerover',()=>drawBtn(true));
-          z.on('pointerout', ()=>drawBtn(false));
-          z.on('pointerdown',()=>{
-            const tr = this.state.troops as Record<string,number>;
-            this.state.resources.food   -= totalFood;
-            this.state.resources.gold   -= totalGold;
-            this.state.resources.lumber -= totalLumber;
-            this.state.resources.stone  -= totalStone;
-            this.state.resources.iron   -= totalIron;
-            tr[troopType] = (tr[troopType]??0)+qty;
-            ownedTxt.setText(`Owned: ${tr[troopType]}`);
-            saveGame(this.state);
-            this.updateResourcePanel();
-          });
-        }
+        const z = this.oAdd(
+          this.add.zone(bx,by,bw,bh).setOrigin(0,0).setScrollFactor(0).setDepth(2104)
+            .setInteractive({useHandCursor:true})
+        ) as Phaser.GameObjects.Zone;
+        z.on('pointerover',()=>{ if(canAff) drawBtn(true); });
+        z.on('pointerout', ()=>drawBtn(false));
+        z.on('pointerdown',()=>{
+          const q = getQty();
+          if (!canAffQty(q)) return;
+          const tc = totalCost(q);
+          const tr = this.state.troops as Record<string,number>;
+          this.state.resources.food   -= tc.food;
+          this.state.resources.gold   -= tc.gold;
+          this.state.resources.lumber -= tc.lumber;
+          this.state.resources.stone  -= tc.stone;
+          this.state.resources.iron   -= tc.iron;
+          tr[troopType] = (tr[troopType]??0)+q;
+          ownedTxt.setText(`Owned: ${tr[troopType]}`);
+          saveGame(this.state);
+          this.updateResourcePanel();
+        });
       });
     });
   }
@@ -596,7 +684,7 @@ export class CityScene extends Phaser.Scene {
 
   private buildDevPanel(): void {
     const W = this.scale.width, H = this.scale.height;
-    const PW=210, PH=230, px=8, py=H-BOT_H-PH-8;
+    const PW=220, PH=246, px=8, py=H-BOT_H-PH-8;
 
     const bg = this.add.graphics().setScrollFactor(0).setDepth(3000);
     bg.fillStyle(0x080608,0.97); bg.fillRoundedRect(px,py,PW,PH,6);
@@ -608,41 +696,62 @@ export class CityScene extends Phaser.Scene {
       fontSize:'11px',fontStyle:'bold',color:'#ff6666',fontFamily:'Georgia, serif',
     }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(3001));
 
-    const btns: {label:string; cb:()=>void}[] = [
-      { label:'+2 000 All Resources', cb:()=>{
+    const btns: {label:()=>string; color:()=>number; cb:()=>void}[] = [
+      {
+        label: ()=>'Max Resources (2B)',
+        color: ()=>0x280808,
+        cb: ()=>{
           const r=this.state.resources;
-          r.food+=2000; r.lumber+=2000; r.stone+=2000; r.iron+=2000; r.gold+=2000;
+          r.food=r.lumber=r.stone=r.iron=r.gold=2_000_000_000;
           this.updateResourcePanel();
-      }},
-      { label:'Max Resources (1M)',  cb:()=>{
-          const r=this.state.resources;
-          r.food=r.lumber=r.stone=r.iron=r.gold=1_000_000;
-          this.updateResourcePanel();
-      }},
-      { label:'Instant Build',       cb:()=>{
-          for(const b of this.state.buildings)
-            if(b.constructingUntil) b.constructingUntil=Date.now()-1;
-      }},
-      { label:'+500 Warriors+Scouts', cb:()=>{
+        },
+      },
+      {
+        label: ()=>this.instantBuildMode ? '⚡ Instant Build: ON' : 'Instant Build: OFF',
+        color: ()=>this.instantBuildMode ? 0x0a2a0a : 0x280808,
+        cb: ()=>{
+          this.instantBuildMode = !this.instantBuildMode;
+          this.refreshInstantBadge();
+          // Rebuild panel so button label/color updates
+          this.devObjs.forEach(o=>o.destroy()); this.devObjs=[];
+          this.buildDevPanel();
+        },
+      },
+      {
+        label: ()=>'Max Troops (10K)',
+        color: ()=>0x280808,
+        cb: ()=>{
           const t=this.state.troops as Record<string,number>;
-          t.warrior=(t.warrior??0)+500; t.scout=(t.scout??0)+500;
-          t.archer=(t.archer??0)+200;
-      }},
+          ['warrior','scout','pikeman','swordsman','archer','cavalry','cataphract'].forEach(k=>{
+            t[k]=10_000;
+          });
+        },
+      },
+      {
+        label: ()=>'Instant Train All',
+        color: ()=>0x280808,
+        cb: ()=>{
+          if(this.state.activeTraining) this.state.activeTraining.completesAt=Date.now()-1;
+        },
+      },
     ];
 
     btns.forEach((btn,i)=>{
-      const bx=px+8, by=py+28+i*46, bw=PW-16, bh=36;
+      const bx=px+8, by=py+28+i*52, bw=PW-16, bh=40;
       const g=this.add.graphics().setScrollFactor(0).setDepth(3001);
       const draw=(h:boolean)=>{
         g.clear();
-        g.fillStyle(h?0x4a1010:0x280808,1); g.fillRoundedRect(bx,by,bw,bh,4);
-        g.lineStyle(1,h?0xcc3030:0x882020,1); g.strokeRoundedRect(bx,by,bw,bh,4);
+        const base=btn.color();
+        g.fillStyle(h?base+0x202020:base,1); g.fillRoundedRect(bx,by,bw,bh,4);
+        const borderC=this.instantBuildMode&&i===1?0x44cc44:0x882020;
+        g.lineStyle(1,h?borderC+0x222222:borderC,1); g.strokeRoundedRect(bx,by,bw,bh,4);
       };
       draw(false);
       this.devObjs.push(g);
 
-      const t=this.add.text(bx+bw/2,by+bh/2,btn.label,{
-        fontSize:'10px',color:'#ff9999',fontFamily:'Arial',
+      const textC=i===1&&this.instantBuildMode?'#88ff88':'#ff9999';
+      const t=this.add.text(bx+bw/2,by+bh/2,btn.label(),{
+        fontSize:'10px',color:textC,fontFamily:'Arial',
       }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(3002);
       this.devObjs.push(t);
 
@@ -652,6 +761,20 @@ export class CityScene extends Phaser.Scene {
         .on('pointerdown',()=>{ btn.cb(); saveGame(this.state); });
       this.devObjs.push(z);
     });
+  }
+
+  private refreshInstantBadge(): void {
+    this.instantBadge?.destroy();
+    this.instantBadge = undefined;
+    if (this.instantBuildMode) {
+      const H = this.scale.height;
+      this.instantBadge = this.add.text(8, H - BOT_H - 22,
+        '⚡ INSTANT BUILD', {
+          fontSize: '9px', color: '#ffff44',
+          backgroundColor: '#3a280088', padding: { x: 4, y: 2 },
+          fontFamily: 'Arial',
+        }).setScrollFactor(0).setDepth(900);
+    }
   }
 
   // ── Top Bar ───────────────────────────────────────────────────────────────
@@ -809,9 +932,10 @@ export class CityScene extends Phaser.Scene {
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
-  if(n>=1_000_000) return (n/1_000_000).toFixed(1)+'M';
-  if(n>=10_000)    return (n/1_000).toFixed(0)+'K';
-  if(n>=1_000)     return (n/1_000).toFixed(1)+'K';
+  if(n>=1_000_000_000) return (n/1_000_000_000).toFixed(1)+'B';
+  if(n>=1_000_000)     return (n/1_000_000).toFixed(1)+'M';
+  if(n>=10_000)        return (n/1_000).toFixed(0)+'K';
+  if(n>=1_000)         return (n/1_000).toFixed(1)+'K';
   return Math.floor(n).toString();
 }
 
