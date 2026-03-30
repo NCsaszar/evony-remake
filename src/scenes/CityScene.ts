@@ -230,9 +230,20 @@ export class CityScene extends Phaser.Scene {
 
         const inSlot = slots.some(([tx,ty]) => tx===x && ty===y);
         t.on('pointerdown', () => {
-          const occupied = this.state.buildings.some(b => b.tileX===x && b.tileY===y && this.inCurrentZone(b));
-          if (inSlot && !occupied) {
+          const occupant = this.state.buildings.find(b => b.tileX===x && b.tileY===y && this.inCurrentZone(b));
+          if (inSlot && !occupant) {
             this.openBuildMenu(x, y);
+          } else if (occupant) {
+            // Clicking anywhere in the tile (including outside the sprite) opens the panel
+            this.clearOverlay();
+            if (occupant.type === 'barracks' || occupant.type === 'stable' || occupant.type === 'workshop') {
+              this.openTrainPanel(occupant);
+            } else {
+              this.buildingPanel.show(occupant, this.state, () => {
+                this.showConstructOverlay(occupant);
+                this.updateResourcePanel();
+              });
+            }
           } else {
             this.buildingPanel.hide();
             this.clearOverlay();
